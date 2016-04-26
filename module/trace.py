@@ -23,61 +23,24 @@ import time
 import types
 import traceback
 from contextlib import *
-import contextlib
 import inspect
-import pdb
 import sys
 import threading
 import collections
-import pprint
 from decimal import Decimal
+import pdb
 
 # XXX FIXME: figure out a good default level
 DEFAULT_TRACE_LEVEL = 100
 
-class LogFunction(object):
-    """ This class provides a callable to log some data """
-
-    def __init__(self, trace_point):
-        self.trace_point = trace_point
-
-    # XXX this should use our real log formatter instead
-    def __call__(self, trace_level, msg, *args):
-        # somebody might want to turn some specific kind of thing on, but
-        # silence some particular message.  They can do that with "squelch".
-        #print("fake %s.%d: %s" % (self.trace_point,trace_level, msg))
-        #print("traces: %s" % (Logger.traces,))
-        if self.trace_point != "squelch":
-            key = [self.trace_point, trace_level]
-            if self.trace_point is None:
-                key[0] = 'default'
-            key = tuple(key)
-            #print("key: %s" % (key,))
-            if key in Logger.traces:
-                trace = Logger.traces[key]
-                trace(self.trace_point, trace_level, msg, *args)
-
-    # This makes it so in TracedObject we can just add a "log" callable
-    # that does whatever the function's default trace_point is, but
-    # any caller can do "self.log.debug(level, msg)" and get "debug" as the
-    # tracepoint, or anything else they put in that position, unless they try to
-    # name their tracepoint __init__, __dict__, __getattr__, __call__, etc.,
-    # which will fail.
-    def __getattr__(self, name):
-        if name.startswith('_'):
-            raise AttributeError(name)
-        if name in self.__dict__:
-            return self.__dict__[name]
-        else:
-            lf = LogFunction(trace_point=name)
-            self.__dict__[name] = lf
-            return lf
-
 def get_frame_info(frame):
     """ fish our code object and its name out of a stack frame """
-    if '__name__' in frame.f_locals and \
-       frame.f_locals['__name__'] == '__main__':
-           pass
+    if frame.f_code.co_name == 'bar' :
+        #print("lalalalaa")
+        #print("dir(frame): %s" % (dir(frame)))
+        #print("dir(frame.f_code): %s" % (dir(frame.f_code)))
+        #print("locals: %s" % (frame.f_locals))
+        pass
     funcname = frame.f_code.co_name
     if 'self' in frame.f_locals:
         obj = frame.f_locals['self']
@@ -86,40 +49,69 @@ def get_frame_info(frame):
     elif funcname in frame.f_globals:
         obj = frame.f_globals[funcname]
     else:
-        print("funcname: %s" % (funcname,))
-        print("frame.f_globals:")
-        for k,v in frame.f_globals.items():
-            print("  '%s':%r" % (k,v))
-        print("frame.f_locals:")
-        for k,v in frame.f_locals.items():
-            print("  '%s':%r" % (k,v))
-        return {'funcname':funcname, 'obj':None}
-    return {'obj':obj, 'funcname':funcname}
+        f = {'funcname':funcname, 'obj':None}
+        #print("f: %s" % (f,))
+        return f
+    g = {'obj':obj, 'funcname':funcname}
+    #print("g: %s" % (g,))
+    return g
 
-def get_trace_info(stack=None):
-    ret = {'modname':None,
-           'clsname':None,
-           'funcname':None,
-           'qualname':None,
-           'obj':None,
-           }
-    # iterate our frames until we find the first function that's not part of the
-    # trace infrastructure.  From there, keep descending until we've either a)
-    # run out of frames, or b) gotten a _trace_point and _trace_level
-    if stack is None:
-        stack = [f[0] for f in inspect.stack()[1:]]
-    for frame in stack:
+def stack_frames(frame=None):
+    if frame:
+        yield frame
+        while frame:
+            frame = frame.f_back
+            if frame:
+                yield frame
+    else:
+        # iterate our frames until we find the first function that's not part of
+        # the trace infrastructure.  From there, keep descending until we've
+        # either a) run out of frames, or b) gotten a _trace_point and
+        # _trace_level
+        for f in inspect.stack()[1:]:
+            if f and f[0]:
+                yield f[0]
+
+def get_trace_info(start_frame=None, extracrud=True):
+    first_found = {
+            'modname':None,
+            'clsname':None,
+            'funcname':None,
+            }
+    for frame in stack_frames(start_frame):
+        ret = {'modname':None,
+               'clsname':None,
+               'funcname':None,
+               'qualname':None,
+               'obj':None,
+               }
+
         info = get_frame_info(frame)
         obj = info['obj']
+        if not obj:
+            continue
+        if extracrud:
+            # print("info: %s" % (info,))
+            # print("obj.__module__: %s" % (obj.__module__,))
+            pass
+        if obj.__module__ == get_trace_info.__module__:
+            continue
         funcname = info['funcname']
+        if funcname == '__main__':
+            break
 
-        mod = obj.__module__
-        modname = obj.__module__
-        cls = obj.__class__
-        clsname = obj.__class__.__name__
+        if obj:
+            mod = obj.__module__
+            modname = obj.__module__
+            cls = obj.__class__
+            clsname = obj.__class__.__name__
+        else:
+            pdb.set_trace()
+            pass
 
         if clsname == 'trace' or funcname == 'event_tracer':
-            continue
+            #continue
+            pass
 
         if not ret['clsname']:
             ret['funcname'] = funcname
@@ -166,59 +158,99 @@ def get_trace_info(stack=None):
         ret["qualname"] = ret["funcname"]
     return ret
 
-def get_trace_info_from_frame(frame):
-    stack = [frame]
-    while frame:
-        frame = frame.f_back
-        stack.append(frame)
-    return get_trace_info(stack)
+class LogFunction(object):
+    """ This class provides a callable to log some data """
 
+    def __init__(self, trace_point=None, base=True):
+        info = get_trace_info()
+        if info['funcname'] == '__init__':
+            self._qualname = "%(modname).%(clsname)" % info
+            self._name = trace_point
+        elif info['qualname']:
+            self._qualname = info["qualname"]
+            self._name = trace_point
+        else:
+            self._qualname = LogFunction.__module__
+            self._name = None
+            #print("holy zonkballs batman: %s" % (info,))
+            #pdb.set_trace()
+        self._trace_point = trace_point
+        self._base = base
 
-def nada(*args, **kwargs): pass
+    def __call__(self, trace_level, fmt, *args):
+        trace_point = self._trace_point or "default"
+        for logger in find_loggers(trace_point, trace_level):
+            logger(trace_point, trace_level, fmt, *args)
 
-def traceback_logger(func, obj, *args, **kwargs):
-    """ A simple logger to log a traceback on entry of an object. """
+    # This makes it so in TracedObject we can just add a "log" callable
+    # that does whatever the function's default trace_point is, but
+    # any caller can do "self.log.debug(level, msg)" and get "debug" as the
+    # tracepoint, or anything else they put in that position, unless they try to
+    # name their tracepoint __init__, __dict__, __getattr__, __call__, etc.,
+    # which will fail.
+    def __getattr__(self, name):
+        if name.startswith('__'):
+            raise AttributeError(name)
+        elif name in self.__dict__:
+            return self.__dict__[name]
+        elif name.startswith('_'):
+            raise AttributeError(name)
+        else:
+            qn = self.__dict__.setdefault('_qualname', '')
+            if qn:
+                qn = "%s.%s" % (qn, name)
+            else:
+                qn = "%s" % (name,)
+            lf = LogFunction(trace_point=qn, base=False)
+            self.__dict__[name] = lf
+            return lf
 
-    info = get_trace_info()
-    log = LogFunction("traceback")
-    stack = inspect.stack()[1:]
-    stack = filter(lambda x: x[3] != 'event_tracer' and \
-                             x[3] != 'inner', stack)
-    for line in stack:
-        fmt = traceback.format_stack(line[0], limit=1)[0]
-        for s in fmt.split('\n'):
-            if s.strip():
-                log(level, "%s:%s", info[qualname], s)
-
-eventmap = {
-    }
+# just a convenient default logger we can use
+dlog = LogFunction(None)
 
 def trace_dispatcher(frame, event, arg):
-    l = LogFunction("ingress")
-    l(9, time.time(), "trace_dispatcher(frame=%r, event=%r, arg=%r)" %
-            (frame, event, arg))
-    if frame.f_code.co_name == '__exit__':
+    global log
+    dlog.ingress(9,
+            "%s: trace_dispatcher(frame=%r, event=%r, arg=%r)" %
+            (trace_dispatcher.__module__, frame, event, arg))
+    if frame.f_code.co_name in ['TracedObject', 'TracedFunction']:
         return
-    info = get_trace_info_from_frame(frame)
+    info = get_trace_info(frame, extracrud=True)
+    # dlog.trace_dispatcher.debug(9, "info: %s" % (info,))
+    qualname = info['qualname']
     obj = info['obj']
     fas = inspect.getargvalues(frame)
     args = inspect.formatargvalues(*fas)
     if hasattr(obj, 'log'):
         log = obj.log
     else:
-        log = LogFunction("default")
+        log = dlog
+    frame = frame.f_back
     if event == "call":
+        lines = inspect.getsource(frame).split("\n")
+        for line in lines:
+            if line.strip():
+                log.ingress(7, "%s %s" % (qualname, line))
+
         fmt = "".join(traceback.format_stack(frame))
         for s in fmt.split('\n'):
             if s.strip():
-                log.trace(1, "%s:%s" % (frame.f_code.co_name, s))
-        log.ingress(1, "%s%s" % (frame.f_code.co_name, args))
+                log.ingress(5, "%s:%s" % (qualname, s))
+
+        log.ingress(3, "%s %s line %s" % (qualname,
+                                          inspect.getsourcefile(frame),
+                                          inspect.getlineno(frame)))
+        log.ingress(1, "%s%s" % (qualname, args))
         return trace_dispatcher
     elif event == "return" and frame.f_code.co_name != '__exit__':
-        log.egress(1, "%s(%s) = %r" % (frame.f_code.co_name, args, arg))
+        log.egress(3, "%s %s line %s" % (qualname,
+                                          inspect.getsourcefile(frame),
+                                          inspect.getlineno(frame)))
+        log.egress(1, "%s(%s) = %r" % (qualname, args, arg))
         sys.settrace(None)
-    l(9, time.time(), "trace_dispatcher(frame=%r, event=%r, arg=%r) = None" %
-            (frame, event, arg))
+    dlog.egress(9,
+            "%s: trace_dispatcher(frame=%r, event=%r, arg=%r) = None" %
+            (trace_dispatcher.__module__, frame, event, arg))
 
 class tracecontext(ContextDecorator):
     deque=collections.deque()
@@ -231,7 +263,10 @@ class tracecontext(ContextDecorator):
     def __exit__(self, *exc):
         sys.settrace(self.sys_tracer)
         threading.settrace(self.sys_tracer)
-        return False
+        return True
+
+eventmap = {
+    }
 
 def event_tracer(func, obj, *args, **kwargs):
     trace_events = {}
@@ -271,22 +306,29 @@ def event_tracer(func, obj, *args, **kwargs):
         eventmap[k]['egress_logger'](func, obj, ret, *args, **kwargs)
     return ret
 
-def trace_point(name:str):
+def tracepoint(name:str):
     """ Decorator to add a trace_point type to an object."""
     def run_func_with_trace_point_set(func, level=1):
         setattr(func, '_trace_point', name)
         return func
     return run_func_with_trace_point_set
 
-def trace_level(level:int):
+def get_caller_module():
+    return None
+
+def tracelevel(level:int):
     """ Decorator to add a tracelevel type to an object."""
     level = int(level)
+    mod = get_caller_module()
     def run_func_with_trace_level_set(func):
         setattr(func, '_trace_level', level)
+        if mod:
+            func.__module__ = mod
         return func
+
     return run_func_with_trace_level_set
 
-def trace_event(name:str, trace_point="debug", trace_level=1):
+def traceevent(name:str, trace_point="debug", trace_level=1):
     """ Decorator to add a trace event to an object."""
     def run_func_with_event_list(func):
         if hasattr(func, '_trace_events'):
@@ -308,7 +350,8 @@ def redecorate(obj):
             # yo dog, I hear you like manually making decorators, so
             # here's a manually made decorator.
             def decorate(func):
-                return tracecontext()(func)
+                x = tracecontext()(func)
+                return x
             v = decorate(v)
             setattr(obj, k, v)
 
@@ -321,39 +364,90 @@ class TracedObjectMeta(type):
     _traced_things = set([])
 
     def __new__(cls, name, bases, nmspc):
-        if not name in ["TracedFunction", "TracedObject"]:
-            for k, v in nmspc.items():
+
+        frames = [f[0] for f in inspect.stack()[1:]]
+        info = get_trace_info()
+        new_nmspc = {}
+        for k, v in nmspc.items():
+            if k in ["TracedFunction", "TracedObject"]:
+                new_nmspc[k] = v
+            else:
                 # XXX actually find the right things to decorate
-                if isinstance(v, types.FunctionType):
+                if isinstance(v, types.FunctionType) or hasattr(v, '__call__'):
                     # yo dog, I hear you like manually making decorators, so
                     # here's a manually made decorator.
                     def decorate(func):
-                        return tracecontext()(func)
+                        x = tracecontext()(func)
+                        #print("dir(x): %s" % (dir(x)))
+                        #print("dir(func): %s" % (dir(func)))
+                        #print("x.__qualname__: %s" % (x.__qualname__))
+                        #print("func.__qualname__: %s" % (func.__qualname__))
+                        #print("x.__module__: %s" % (x.__module__))
+                        #print("func.__module__: %s" % (func.__module__))
+                        return x
                     v = decorate(v)
-                    redecorate(v)
-                    nmspc[k] = v
+                    # print("redecorating %s.%s" % (name, k))
+                    # redecorate(v)
+                    new_nmspc[k] = v
 
             # We use "None" rather than "default" here so that if somebody /sets/
             # something to default, we won't override it with something with lower
             # precedence.
-            trace_point = nmspc.setdefault("_trace_point", None)
-            nmspc['log'] = LogFunction(trace_point)
-        print("cls: %s name: %s" % (cls, name))
-        print("bases: %s" % (bases,))
-        return type.__new__(cls, name, bases, nmspc)
+            trace_point = nmspc.get('_trace_point') or None
+            new_nmspc["_trace_point"] = trace_point
 
-class TracedObject(metaclass=TracedObjectMeta):
+            # we don't want the module import to instantiate these, because
+            # get_trace_info() will wind up trying to find info about
+            # TracedObjectMeta instead of our real object.
+            def defer_this_call():
+                return LogFunction("default")
+            new_nmspc['log'] = defer_this_call
+
+        x = type.__new__(cls, name, bases, new_nmspc)
+
+        # XXX seriously this is the worst damned hack.  If we don't do this,
+        # everything uselessly says it's from /this/ module.
+        def guess_modname_from_nmspc(nmspc):
+            modnames = {}
+            for v in nmspc.values():
+                if hasattr(v, '__module__'):
+                    modnames.setdefault(v.__module__, 0)
+                    modnames[v.__module__] += 1
+            n = 0
+            name = None
+            for k,v in modnames.items():
+                if v > n:
+                    name = k
+            return name or cls.__module__
+        modname = guess_modname_from_nmspc(nmspc)
+        setattr(x, '__module__', modname)
+        return x
+
+class TracedObject(object, metaclass=TracedObjectMeta):
     """ This provides an object which automatically logs some things """
 
-    def __init__(self, *args, **kwargs):
-        pass
+@contextmanager
+def logcontext(func):
+    yield func.log
 
-class TracedFunction(metaclass=TracedObjectMeta):
-    def __init__(self, *args, **kwargs):
-        pass
+class TracedFunction(object):
+    def __new__(cls, self):
+        def decorate(func):
+            return tracecontext()(func)
+        self.__callee__ = decorate(self)
+
+        # we don't want the module import to instantiate these, because
+        # get_trace_info() will wind up trying to find info about
+        # TracedObjectMeta instead of our real object.
+        def defer_this_call():
+            return LogFunction("default")
+        self.log = defer_this_call
+
+        return self
 
     def __call__(self, *args, **kwargs):
-        pass
+        with logcontext(self) as log:
+            callee = self.__callee__(*args, **kwargs)
 
 class Logger(object):
     """ This is our logger """
@@ -361,13 +455,13 @@ class Logger(object):
         def __init__(self, trace_point, trace_level, callback):
             self.callbacks = [callback]
             self.trace_point = trace_point
-            self.trace_event = trace_event
+            #self.trace_event = trace_event
 
         def __call__(self, trace_point, trace_level, fmt, *args):
             if not isinstance(trace_level, int):
                 raise TypeError("log level must be an integer")
 
-            t = time.time()
+            t = Decimal(time.time()).normalize().quantize(Decimal('0.00001'))
             if isinstance(fmt, dict):
                 if args:
                     fmt['args'] = args
@@ -377,35 +471,66 @@ class Logger(object):
                     s = (str(fmt) % args).replace("\n", "\\n")
                 except TypeError:
                     print("fmt: '%r' args: %r" % (fmt, args))
-                    pdb.set_trace()
+                    #pdb.set_trace()
                     raise
+            tp = trace_point or "default"
             for callback in self.callbacks:
-                return callback(trace_point, trace_level, t, s)
+                return callback(tp, trace_level, t, s)
     traces = {}
 
     def __init__(self, trace_point, trace_level, callback):
-        trace_level = int(trace_level)
-        key =(trace_point,trace_level)
-        if key in Logger.traces:
-            instance = Logger.traces[key]
-            instance.callbacks.append(callback)
-            redecorate(trace_point, trace_level)
-        else:
-            instance = Logger.__Logger(trace_point, trace_level, callback)
-            Logger.traces[key] = instance
+        if trace_point is None:
+            raise ValueError("trace_point cannot be None")
+        if not isinstance(trace_level, int):
+            raise TypeError("trace_level must be an integer")
+        key = (trace_point, trace_level)
+        if not key in Logger.traces:
+            Logger.traces[key] = Logger.__Logger(trace_point, trace_level, callback)
+        instance = Logger.traces[key]
+        if not callback in instance.callbacks:
+            instance.callbacks.append(instance)
+
+        # redecorate(trace_point, trace_level)
+        # print("Logger.traces: %s" % (Logger.traces,))
 
     def __call__(self, trace_point, trace_level, *args):
-        trace_level = int(trace_level)
-        for k,v in Logger.traces.items():
-            if k['trace_point'] != trace_point:
-                continue
-            if k['trace_level'] < trace_level:
-                continue
-            instance(trace_point, trace_level, *args)
+        if trace_point is None:
+            raise ValueError("trace_point cannot be None")
+        if not isinstance(trace_level, int):
+            raise TypeError("trace_level must be an integer")
+        for logger in find_loggers(trace_point, trace_level):
+            logger(trace_point, trace_level, *args)
 
+def find_loggers(trace_point:str, trace_level:int, regexp=False):
+    """ This generator provides all the valid loggers registered for a given
+        trace_point string and trace_level."""
+    if trace_point is None:
+        raise ValueError("trace_point cannot be None")
+    if not isinstance(trace_level, int):
+        raise TypeError("trace_level must be an integer")
 
-#log = LogFunction()
-#
+    # somebody might want to turn some specific kind of thing on, but
+    # silence some particular message level.  They can do that with
+    # "squelch".
+    if trace_point == 'squelch' or trace_point.endswith('.squelch') or \
+            '.squelch.' in trace_point:
+        raise StopIteration
+
+    for k,v in Logger.traces.items():
+        tp = k[0]
+        dottpdot = ".%s." % (tp,)
+        dottp = ".%s" % (tp,)
+
+        # XXX make globbing work
+        # XXX make regexps work
+        # print("trace_point: %s tp: %s" % (trace_point, tp))
+        if trace_point != tp and not trace_point.endswith(dottp) and \
+                not dottpdot in trace_point:
+            continue
+        if k[1] < trace_level:
+            continue
+        yield v
+
 #@trace_point("zoom")
 #class Foo(metaclass=TracedObject):
 #    def __init__(self):
@@ -449,5 +574,5 @@ class Logger(object):
 #z.zonk()
 
 __all__ = [ "TracedObject", "TracedFunction", "LogFunction",
-            "trace_point", "trace_level", "trace_event",
+            "tracepoint", "tracelevel", "traceevent",
             'eventmap', "get_trace_info"]

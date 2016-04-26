@@ -2,10 +2,10 @@
 
 from .trace import *
 
-@trace_point("debug")
-@trace_level(1)
+@tracepoint("debug")
+@tracelevel(1)
 class Foo(TracedObject):
-    @trace_point("default")
+    @tracepoint("default")
     def bar(self):
         print("bar")
 
