@@ -219,10 +219,9 @@ def find_loggers(trace_point:str, trace_level:int, regexp=False):
 class LogFunction(object):
     """ This class provides a callable to log some data """
 
-    def __init__(self, trace_point=None, qualname=None, base=False):
+    def __init__(self, trace_point=None, qualname=None):
         self._qualname = ""
         self.__tracepoint = ""
-        self._base = base
         self._name = ""
 
         if qualname == "default":
@@ -290,6 +289,9 @@ def trace_dispatcher(frame, event, arg):
     args = inspect.formatargvalues(*fas)
     frame = frame.f_back
     if event == "call":
+        if not hasattr(obj, 'log'):
+            sys.settrace(None)
+            return None
         lines = inspect.getsource(frame).split("\n")
         for line in lines:
             if line.strip():
@@ -342,12 +344,28 @@ def tracelevel(level:int):
 
     return run_func_with_trace_level_set
 
+@contextmanager
+def logcontext(obj, func):
+    if hasattr(func, '_trace_point') and func._trace_point:
+        tp = func._trace_point
+    elif hasattr(obj, '_trace_point') and obj._trace_point:
+        tp = obj._trace_point
+    else:
+        tp = "default"
+    if hasattr(obj, 'log') and tp == obj._trace_point:
+        yield obj.log
+    else:
+        qn = "%s.%s" % (obj.__module__, func.__name__)
+        log = LogFunction(qualname=qn, trace_point=tp)
+        yield log
+
 class TracedObject(object):
     def __new__(cls, *args, **kwargs):
         self = object.__new__(cls, *args, **kwargs)
         object.__init__(self)
         qualname = "%s.%s" % (self.__module__, self.__class__.__name__)
-        log = LogFunction(qualname=qualname, trace_point="default")
+        tp = self._trace_point or "default"
+        log = LogFunction(qualname=qualname, trace_point=tp)
         setattr(self, 'log', log)
         newattrs = {}
         for k in dir(self):
@@ -358,8 +376,12 @@ class TracedObject(object):
             if isinstance(v, types.FunctionType) or isinstance(v, types.MethodType):
                 # yo dog, I hear you like manually making decorators, so
                 # here's a manually made decorator.
-                def decorate(func):
-                    return tracecontext()(func)
+                with logcontext(self, v) as log:
+                    def decorate(func):
+                        f = tracecontext()(func)
+                        func.__dict__['log'] = log
+                        # setattr(f, 'log', log)
+                        return f
                 newattrs[k] = decorate(v)
 
         for k,v in newattrs.items():
@@ -367,22 +389,14 @@ class TracedObject(object):
 
         return self
 
-@contextmanager
-def logcontext(func):
-    if hasattr(func, 'log'):
-        yield func.log
-    else:
-        qn = "%s.%s" % (func.__module__, func.__name__)
-        log = LogFunction(qualname=qn, trace_point="default")
-        yield log
-
 class TracedFunction(object):
     def __new__(cls, self):
-        with logcontext(self) as log:
+        with logcontext(self, self) as log:
             def decorate(func):
+                func.__dict__['log'] = log
                 f = tracecontext()(func)
-                setattr(func, 'log', log)
-                setattr(f, 'log', log)
+                # setattr(func, 'log', log)
+                # setattr(f, 'log', log)
                 return f
             self.__callee__ = decorate(self)
 

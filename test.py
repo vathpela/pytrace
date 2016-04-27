@@ -61,15 +61,12 @@ def c():
     c.log(1, "baz")
     c.log.ingress(9, "foo")
 
-
 # print("dir(c): %s" % (dir(c),))
 print("calling c")
 c()
 
-x = trace.LogFunction()
-x.ingress(1, "x")
-
-sys.exit(0)
+y = trace.LogFunction()
+y.ingress(1, "x")
 
 loggers += [
         {'trace_point':'ingress', 'trace_level':5, 'logger':None},
