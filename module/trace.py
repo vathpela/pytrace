@@ -372,7 +372,13 @@ class TracedObject(object):
         for k in dir(self):
             if k in ["TracedFunction", "TracedObject"]:
                 continue
-            v = getattr(self, k)
+            try:
+                v = getattr(self, k)
+            except AttributeError:
+                # __init__() hasn't run yet, so if __getattr__() relies on it,
+                # those things won't instantiated yet, even though they're in
+                # __dict__.
+                continue
             # XXX actually find the right things to decorate
             if isinstance(v, types.FunctionType) or isinstance(v, types.MethodType):
                 # yo dog, I hear you like manually making decorators, so
