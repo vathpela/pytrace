@@ -27,9 +27,26 @@ import sys
 import threading
 import collections
 from decimal import Decimal
+import pdb
 
 # XXX FIXME: figure out a good default level
 DEFAULT_TRACE_LEVEL = 100
+
+def tracepoint(name:str):
+    """ Decorator to add a trace_point type to an object."""
+    def run_func_with_trace_point_set(func, level=1):
+        setattr(func, '_trace_point', name)
+        return func
+    return run_func_with_trace_point_set
+
+def tracelevel(level:int):
+    """ Decorator to add a tracelevel type to an object."""
+    level = int(level)
+    def run_func_with_trace_level_set(func):
+        setattr(func, '_trace_level', level)
+        return func
+
+    return run_func_with_trace_level_set
 
 def get_frame_info(frame):
     """ fish our code object and its name out of a stack frame """
@@ -327,22 +344,6 @@ class tracecontext(ContextDecorator):
         sys.settrace(self.sys_tracer)
         threading.settrace(self.sys_tracer)
         return False
-
-def tracepoint(name:str):
-    """ Decorator to add a trace_point type to an object."""
-    def run_func_with_trace_point_set(func, level=1):
-        setattr(func, '_trace_point', name)
-        return func
-    return run_func_with_trace_point_set
-
-def tracelevel(level:int):
-    """ Decorator to add a tracelevel type to an object."""
-    level = int(level)
-    def run_func_with_trace_level_set(func):
-        setattr(func, '_trace_level', level)
-        return func
-
-    return run_func_with_trace_level_set
 
 @contextmanager
 def logcontext(obj, func):
