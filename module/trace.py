@@ -27,6 +27,8 @@ import sys
 import threading
 import collections
 from decimal import Decimal
+import fnmatch
+import re
 import pdb
 
 # XXX FIXME: figure out a good default level
@@ -224,10 +226,14 @@ def find_loggers(trace_point:str, trace_level:int, regexp=False):
         dottpdot = ".%s." % (tp,)
         dottp = ".%s" % (tp,)
 
-        # XXX make globbing work
-        # XXX make regexps work
-        if trace_point != tp and not trace_point.endswith(dottp) and \
-                not dottpdot in trace_point:
+        globre = fnmatch.translate(tp)
+        # print("re: %s globre: %s trace_point: %s" % (tp, globre, trace_point))
+        #print("re.search(pattern=%s, string=%s): %s" % (tp, trace_point, re.search(tp, trace_point)))
+        #print("re.search(pattern=%s, string=%s): %s" % (globre, trace_point, re.search(globre, trace_point)))
+        if trace_point != tp and not trace_point.endswith(dottp) \
+                and not dottpdot in trace_point \
+                and not re.search(tp, trace_point) \
+                and not re.search(globre, trace_point):
             continue
         if k[1] < trace_level:
             continue
