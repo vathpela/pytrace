@@ -352,7 +352,8 @@ def logcontext(obj, func):
         tp = obj._trace_point
     else:
         tp = "default"
-    if hasattr(obj, 'log') and tp == obj._trace_point:
+    if hasattr(obj, 'log') and \
+            (not hasattr(obj, '_trace_point') or tp == obj._trace_point):
         yield obj.log
     else:
         qn = "%s.%s" % (obj.__module__, func.__name__)
@@ -361,10 +362,9 @@ def logcontext(obj, func):
 
 class TracedObject(object):
     def __new__(cls, *args, **kwargs):
-        self = object.__new__(cls, *args, **kwargs)
-        object.__init__(self)
+        self = object.__new__(cls)
         qualname = "%s.%s" % (self.__module__, self.__class__.__name__)
-        tp = self._trace_point or "default"
+        tp = (hasattr(self, '_trace_point') and self._trace_point) or "default"
         log = LogFunction(qualname=qualname, trace_point=tp)
         setattr(self, 'log', log)
         newattrs = {}
@@ -388,6 +388,9 @@ class TracedObject(object):
             setattr(self, k, v)
 
         return self
+
+    def __init__(self):
+        object.__init__(self)
 
 class TracedFunction(object):
     def __new__(cls, self):
