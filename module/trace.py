@@ -18,7 +18,6 @@
 # Authors:
 #  Peter Jones <pjones@redhat.com>
 #
-import copy
 import time
 import types
 import traceback
@@ -28,15 +27,12 @@ import sys
 import threading
 import collections
 from decimal import Decimal
-import pdb
 
 # XXX FIXME: figure out a good default level
 DEFAULT_TRACE_LEVEL = 100
 
 def get_frame_info(frame):
     """ fish our code object and its name out of a stack frame """
-    if frame.f_code.co_name == 'bar' :
-        pass
     funcname = frame.f_code.co_name
     if 'self' in frame.f_locals:
         obj = frame.f_locals['self']
@@ -163,11 +159,7 @@ class Logger(object):
                     fmt['args'] = args
                 s = fmt
             else:
-                try:
-                    s = (str(fmt) % args).replace("\n", "\\n")
-                except TypeError:
-                    print("fmt: '%r' args: %r" % (fmt, args))
-                    raise
+                s = (str(fmt) % args).replace("\n", "\\n")
             tp = trace_point or "default"
             for callback in self.callbacks:
                 return callback(tp, trace_level, t, s)
@@ -186,7 +178,6 @@ class Logger(object):
             instance.callbacks.append(instance)
 
         # redecorate(trace_point, trace_level)
-        # print("Logger.traces: %s" % (Logger.traces,))
 
     def __call__(self, trace_point, trace_level, *args):
         if trace_point is None:
@@ -218,7 +209,6 @@ def find_loggers(trace_point:str, trace_level:int, regexp=False):
 
         # XXX make globbing work
         # XXX make regexps work
-        # print("trace_point: %s tp: %s" % (trace_point, tp))
         if trace_point != tp and not trace_point.endswith(dottp) and \
                 not dottpdot in trace_point:
             continue
@@ -246,7 +236,6 @@ class LogFunction(object):
         if not qualname and trace_point and "." in trace_point:
             qualname = trace_point
             trace_point = "default"
-        #print("qn: %s tp: %s base: %s" % (qualname, trace_point, base))
         if qualname:
             if qualname.endswith(".default"):
                 qualname = qualname[:-8]
@@ -261,8 +250,6 @@ class LogFunction(object):
             qn = ""
         tp = "%s%s" % (qn, trace_point or "default")
         self.__tracepoint = tp
-        #print("s.qn: %s s.tp: %s s.n: %s" % (self._qualname, self.__tracepoint,
-        #    self._name))
 
     def __call__(self, trace_level, fmt, *args):
         trace_point = self.__tracepoint or "default"
@@ -289,20 +276,18 @@ class LogFunction(object):
 log = LogFunction(qualname=LogFunction.__module__)
 
 def trace_dispatcher(frame, event, arg):
+    if frame.f_code.co_name in ['TracedObject', 'TracedFunction']:
+        return
     global log
     log.trace_dispatcher.ingress(1,
             "trace_dispatcher(frame=%r, event=%r, arg=%r)" %
             (frame, event, arg))
-    if frame.f_code.co_name in ['TracedObject', 'TracedFunction']:
-        return
     info = get_trace_info(frame)
     # dlog.trace_dispatcher.debug(9, "info: %s" % (info,))
     qualname = info['qualname']
     obj = info['obj']
     fas = inspect.getargvalues(frame)
     args = inspect.formatargvalues(*fas)
-    # print("qualname: %s" % (qualname,))
-    # print("obj: %s" % (obj,))
     frame = frame.f_back
     if event == "call":
         lines = inspect.getsource(frame).split("\n")
@@ -348,17 +333,11 @@ def tracepoint(name:str):
         return func
     return run_func_with_trace_point_set
 
-def get_caller_module():
-    return None
-
 def tracelevel(level:int):
     """ Decorator to add a tracelevel type to an object."""
     level = int(level)
-    mod = get_caller_module()
     def run_func_with_trace_level_set(func):
         setattr(func, '_trace_level', level)
-        if mod:
-            func.__module__ = mod
         return func
 
     return run_func_with_trace_level_set
@@ -419,47 +398,6 @@ class TracedFunction(object):
         callee = self.__callee__(*args, **kwargs)
         return callee
 
-#@trace_point("zoom")
-#class Foo(metaclass=TracedObject):
-#    def __init__(self):
-#        self.log(1, "this should be log level type zoom")
-#        print('1')
-#
-#    @trace_point("baz")
-#    def foo(self):
-#        self.log(3, "this should be log type baz")
-#        print('2')
-#
-#    def zonk(self):
-#        self.log.debug(3, "this should be log type debug")
-#        print('3')
-#        return 0
-#
-#class Bar(metaclass=TracedObject):
-#    def __init__(self):
-#        self.log(9, "this should be log type default")
-#
-#@trace_point("incorrect")
-#class Baz(metaclass=TracedObject):
-#    @trace_point("default")
-#    def __init__(self):
-#        self.log(4, "this should be log type default")
-#
-#    def zonk(self):
-#        self.log(5,"this should be log type incorrect")
-#
-#@trace_point("maybe")
-#def bullshit():
-#    log(4, "does this even work?  maybe...")
-#
-#x = Foo()
-#x.foo()
-#x.zonk()
-#
-#y = Bar()
-#
-#z = Baz()
-#z.zonk()
 
 __all__ = [ "TracedObject", "TracedFunction", "LogFunction",
             "tracepoint", "tracelevel", "get_trace_info"]
