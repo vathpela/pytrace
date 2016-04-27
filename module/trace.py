@@ -157,6 +157,7 @@ class Logger(object):
                 return
 
             t = Decimal(time.time()).normalize().quantize(Decimal('0.00001'))
+            # t -= t % Decimal('1000')
             if isinstance(fmt, dict):
                 if args:
                     fmt['args'] = args
