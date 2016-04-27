@@ -5,11 +5,11 @@ import sys
 from module import *
 
 def print_it(tp, tl, time, s):
-    print("%s.%d: %s: %s" % (tp, tl, time, s))
+    print("%s %s.%d: %s" % (time, tp, tl, s))
 
 def print_if_9(tp, tl, time, s):
     if tl >= 9:
-        print("%s.%d: %s: %s" % (tp, tl, time, s))
+        print("%s %s.%d: %s" % (time, tp, tl, s))
 
 tl = trace.Logger("debug", 9, print_if_9)
 
@@ -17,8 +17,8 @@ loggers = [
         {'trace_point':'debug', 'trace_level':9, 'logger':tl},
         {'trace_point':'default', 'trace_level':1, 'logger':None},
         {'trace_point':'debug', 'trace_level':1, 'logger':None},
-        {'trace_point':'ingress', 'trace_level':1, 'logger':None},
-        {'trace_point':'egress', 'trace_level':1, 'logger':None},
+        {'trace_point':'ingress', 'trace_level':9, 'logger':None},
+        {'trace_point':'egress', 'trace_level':9, 'logger':None},
         ]
 
 del tl
@@ -36,7 +36,8 @@ x = otherstuff.Foo()
 print("calling x.bar()")
 x.bar()
 
-sys.exit(0)
+# pdb.set_trace()
+x.log(1, "foo")
 
 loggers += [
         {'trace_point':'ingress', 'trace_level':3, 'logger':None},
@@ -57,9 +58,18 @@ def b():
 @trace.TracedFunction
 def c():
     b()
+    c.log(1, "baz")
+    c.log.ingress(9, "foo")
 
+
+# print("dir(c): %s" % (dir(c),))
 print("calling c")
 c()
+
+x = trace.LogFunction()
+x.ingress(1, "x")
+
+sys.exit(0)
 
 loggers += [
         {'trace_point':'ingress', 'trace_level':5, 'logger':None},
