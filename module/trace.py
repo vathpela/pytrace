@@ -362,58 +362,30 @@ def tracelevel(level:int):
 
     return run_func_with_trace_level_set
 
-class TracedObjectMeta(type):
-    """ This class object provides you with a metaclass you can use in your
-    classes to get logging set up with easy defaults
-    """
-
-    def __new__(cls, name, bases, nmspc):
-        new_nmspc = {}
-        for k, v in nmspc.items():
-            if k in ["TracedFunction", "TracedObject"]:
-                new_nmspc[k] = v
-            else:
-                # XXX actually find the right things to decorate
-                if isinstance(v, types.FunctionType) or hasattr(v, '__call__'):
-                    # yo dog, I hear you like manually making decorators, so
-                    # here's a manually made decorator.
-                    def decorate(func):
-                        return tracecontext()(func)
-                    new_nmspc[k] = decorate(v)
-
-            # We use "None" rather than "default" here so that if somebody /sets/
-            # something to default, we won't override it with something with lower
-            # precedence.
-            trace_point = nmspc.get('_trace_point') or None
-            new_nmspc["_trace_point"] = trace_point
-
-        x = type.__new__(cls, name, bases, new_nmspc)
-
-        # XXX seriously this is the worst damned hack.  If we don't do this,
-        # everything uselessly says it's from /this/ module.
-        def guess_modname_from_nmspc(nmspc):
-            modnames = {}
-            for v in nmspc.values():
-                if hasattr(v, '__module__'):
-                    if v.__module__.startswith('_frozen_'):
-                        continue
-                    modnames.setdefault(v.__module__, 0)
-                    modnames[v.__module__] += 1
-            n = 0
-            name = None
-            for k,v in modnames.items():
-                if v > n:
-                    name = k
-            return name or cls.__module__
-        modname = guess_modname_from_nmspc(nmspc)
-        setattr(x, '__module__', modname)
-        qualname = "%s.%s" % (x.__module__, x.__name__)
+class TracedObject(object):
+    def __new__(cls, *args, **kwargs):
+        self = object.__new__(cls, *args, **kwargs)
+        object.__init__(self)
+        qualname = "%s.%s" % (self.__module__, self.__class__.__name__)
         log = LogFunction(qualname=qualname, trace_point="default")
-        setattr(x, 'log', log)
-        return x
+        setattr(self, 'log', log)
+        newattrs = {}
+        for k in dir(self):
+            if k in ["TracedFunction", "TracedObject"]:
+                continue
+            v = getattr(self, k)
+            # XXX actually find the right things to decorate
+            if isinstance(v, types.FunctionType) or isinstance(v, types.MethodType):
+                # yo dog, I hear you like manually making decorators, so
+                # here's a manually made decorator.
+                def decorate(func):
+                    return tracecontext()(func)
+                newattrs[k] = decorate(v)
 
-class TracedObject(object, metaclass=TracedObjectMeta):
-    """ This provides an object which automatically logs some things """
+        for k,v in newattrs.items():
+            setattr(self, k, v)
+
+        return self
 
 @contextmanager
 def logcontext(func):
